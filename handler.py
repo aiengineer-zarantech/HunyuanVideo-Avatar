@@ -41,20 +41,32 @@ def handler(event):
     if not download_file(audio_url, audio_path):
         return {"error": "Failed to download audio"}
 
-    # ✅ 修正環境：確保 hymm_sp 模組與 flash_attn dummy 可被找到
+    # ✅ 環境設定
     env = os.environ.copy()
     env["PYTHONPATH"] = "/workspace"
     env["HF_HOME"] = "/workspace/.cache/huggingface"
     env["TORCH_HOME"] = "/workspace/.cache/torch"
-    env["TRANSFORMERS_OFFLINE"] = "0"  # 若需要離線部署可改成 "1"
+    env["TRANSFORMERS_OFFLINE"] = "0"
+    env["DISABLE_SP"] = "1"   # single-GPU 必須
 
-    # ▶️ 執行 HunyuanVideo-Avatar 推理
+    # ▶️ 執行 HunyuanVideo-Avatar 單卡推理 (sample_gpu_poor.py)
+    checkpoint_path = "./weights/ckpts/hunyuan-video-t2v-720p/transformers/mp_rank_00_model_states_fp8.pt"
+    
     cmd = [
-        "python", "hymm_sp/inference.py",
-        "--config", "configs/hunyuan_avatar.yaml",
-        "--image_path", image_path,
+        "python", "hymm_sp/sample_gpu_poor.py",
+        "--input", image_path,
         "--audio_path", audio_path,
-        "--output_dir", "results"
+        "--ckpt", checkpoint_path,
+        "--sample-n-frames", "129",
+        "--image-size", "704",
+        "--seed", "128",
+        "--cfg-scale", "7.5",
+        "--infer-steps", "50",
+        "--use-deepcache", "1",
+        "--flow-shift-eval-video", "5.0",
+        "--save-path", "results",
+        "--use-fp8",
+        "--infer-min"
     ]
 
     print(f"[INFO] Running command: {' '.join(cmd)}")
@@ -69,26 +81,39 @@ def handler(event):
             env=env
         )
 
-        video_path = "results/avatar_out.mp4"
-        if os.path.exists(video_path):
+        # sample_gpu_poor.py 的輸出檔名可能不同，這裡列出常見可能
+        possible_outputs = [
+            "results/avatar_out.mp4",
+            "results/output.mp4",
+            "results/result.mp4",
+        ]
+        
+        video_path = None
+        for p in possible_outputs:
+            if os.path.exists(p):
+                video_path = p
+                break
+
+        if video_path:
             return {
                 "status": "success",
                 "video_path": video_path,
-                "stdout": result.stdout[-800:],  # 顯示最後部分的log
+                "stdout": result.stdout[-800:],
             }
         else:
             return {
                 "status": "failed",
-                "message": "No video generated",
-                "stdout": result.stdout[-800:],
-                "stderr": result.stderr[-800:],
+                "message": "Script ran but no video file found",
+                "stdout": result.stdout[-2000:],
+                "stderr": result.stderr[-2000:],
             }
 
     except subprocess.CalledProcessError as e:
+        # 這裡會捕捉到真正的錯誤，方便除錯
         return {
             "error": "Inference script crashed",
-            "stdout": e.stdout[-2000:] if e.stdout else "No stdout",
-            "stderr": e.stderr[-2000:] if e.stderr else "No stderr",
+            "stdout": e.stdout[-2000:] if e.stdout else None,
+            "stderr": e.stderr[-2000:] if e.stderr else None,
         }
 
 
