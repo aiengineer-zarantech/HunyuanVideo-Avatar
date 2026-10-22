@@ -73,7 +73,8 @@ def handler(event):
         # Header (sample_gpu_poor.py is format ko expect karta hai)
         writer.writerow(['image_path', 'audio_path', 'name'])
         writer.writerow([image_path, audio_path, 'my_avatar'])
-    
+        
+    vae_path = "/runpod-volume/weights/ckpts/hunyuan-video-t2v-720p/vae"
     logger.info(f"Created CSV at {csv_path}")
 
     # Build command for single GPU inference using CSV
@@ -81,6 +82,7 @@ def handler(event):
         "python", "hymm_sp/sample_gpu_poor.py",
         "--input", csv_path,  # <-- CSV File pass ki
         "--ckpt", checkpoint_path,
+        "--vae", vae_path,
         "--sample-n-frames", "129",
         "--image-size", "704",
         "--seed", "128",
@@ -90,7 +92,7 @@ def handler(event):
         "--flow-shift-eval-video", "5.0",
         "--save-path", "results",
         "--use-fp8",
-        "--infer-min"
+        "--infer-min",
     ]
 
     logger.info(f"[INFO] Running command: {' '.join(cmd)}")
