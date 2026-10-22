@@ -87,8 +87,8 @@ def handler(event):
     except subprocess.CalledProcessError as e:
         return {
             "error": "Inference script crashed",
-            "stdout": e.stdout[-2000:] if e.stdout else None,
-            "stderr": e.stderr[-2000:] if e.stderr else None,
+            "stdout": e.stdout[-2000:] if e.stdout else "No stdout",
+            "stderr": e.stderr[-2000:] if e.stderr else "No stderr",
         }
 
 
