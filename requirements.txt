@@ -15,6 +15,7 @@ huggingface_hub==0.23.0
 safetensors==0.4.3
 accelerate==0.27.2
 filelock==3.8.0
+pandas==2.2.0        # <--- YEH ADD KAREIN (Data loading ke liye)
 
 # === 影像與影片處理 ===
 opencv-python==4.9.0.80
