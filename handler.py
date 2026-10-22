@@ -4,6 +4,7 @@ import subprocess
 import requests
 import shutil
 import logging
+import csv
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,33 +60,26 @@ def handler(event):
     
     # Debug: Check if checkpoint exists
     logger.info(f"[DEBUG] Checking checkpoint at: {checkpoint_path}")
-    logger.info(f"[DEBUG] File exists: {os.path.exists(checkpoint_path)}")
-    
     if not os.path.exists(checkpoint_path):
-        # List volume contents for debugging
-        logger.error("[DEBUG] Checkpoint NOT FOUND. Listing /runpod-volume contents:")
-        if os.path.exists("/runpod-volume"):
-            for root, dirs, files in os.walk("/runpod-volume"):
-                level = root.replace("/runpod-volume", "").count(os.sep)
-                if level < 3:  # Limit depth to avoid huge logs
-                    indent = "  " * level
-                    logger.error(f"{indent}{os.path.basename(root)}/")
-                    for file in files[:5]:  # Show first 5 files
-                        logger.error(f"{indent}  {file}")
-        else:
-            logger.error("/runpod-volume does not exist at all!")
-        
-        return {
-            "error": "Checkpoint file not found",
-            "expected_path": checkpoint_path,
-            "hint": "Ensure model weights are uploaded to /runpod-volume/weights/ckpts/..."
-        }
+        logger.error("[DEBUG] Checkpoint NOT FOUND.")
+        return {"error": "Checkpoint file not found", "expected_path": checkpoint_path}
+    else:
+        logger.info("[DEBUG] File exists: True")
 
-    # Build command for single GPU inference
+    # ✅ CREATE CSV for sample_gpu_poor.py
+    csv_path = "uploads/input.csv"
+    with open(csv_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        # Header (sample_gpu_poor.py is format ko expect karta hai)
+        writer.writerow(['image_path', 'audio_path', 'name'])
+        writer.writerow([image_path, audio_path, 'my_avatar'])
+    
+    logger.info(f"Created CSV at {csv_path}")
+
+    # Build command for single GPU inference using CSV
     cmd = [
         "python", "hymm_sp/sample_gpu_poor.py",
-        "--input", image_path,
-        "--audio_path", audio_path,
+        "--input", csv_path,  # <-- CSV File pass ki
         "--ckpt", checkpoint_path,
         "--sample-n-frames", "129",
         "--image-size", "704",
@@ -112,10 +106,8 @@ def handler(event):
         )
         
         logger.info(f"[STDOUT] {result.stdout[-1500:]}")
-        if result.stderr:
-            logger.warning(f"[STDERR] {result.stderr[-1500:]}")
 
-        # Check for output video (different possible names)
+        # Check for output video
         possible_outputs = [
             "results/avatar_out.mp4",
             "results/output.mp4",
@@ -126,16 +118,16 @@ def handler(event):
         for p in possible_outputs:
             if os.path.exists(p):
                 video_path = p
-                logger.info(f"Found output video: {video_path}")
                 break
         
+        # Agar upar wale naam se nahi mili, toh results folder me koi bhi mp4 dhundhein
+        if not video_path and os.path.exists("results"):
+            for f in os.listdir("results"):
+                if f.endswith(".mp4"):
+                    video_path = os.path.join("results", f)
+                    break
+
         if not video_path:
-            # List results folder to help find actual filename
-            logger.error("No video found. Listing results/ folder:")
-            if os.path.exists("results"):
-                for f in os.listdir("results"):
-                    logger.error(f"  {f}")
-            
             return {
                 "status": "failed",
                 "message": "Script completed but no video file found",
@@ -150,7 +142,6 @@ def handler(event):
         }
 
     except subprocess.CalledProcessError as e:
-        # This catches actual script failures
         logger.error(f"Inference script crashed with code {e.returncode}")
         return {
             "error": "Inference script crashed",
